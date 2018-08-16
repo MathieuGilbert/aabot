@@ -1,0 +1,28 @@
+{{define "content"}}
+    <h1>Welcome to the Bot</h1>
+    <p>DexBot's number is: {{.DexBotNum}}</p>
+    {{ range $k, $v := .Sections}}
+        <hr>
+        <h2>{{$v.Token.Name}}</h2>
+        <p>Buys</p>
+        <table>
+            {{range $k, $b := $v.Buys}}
+                <tr>
+                    <td>{{$b.ExchangeOID}}</td>
+                    <td>{{$b.Price}}</td>
+                    <td>{{toEth $b.Volume}}</td>
+                </tr>
+            {{end}}
+        </table>
+        <p>Sells</p>
+        <table>
+            {{range $k, $s := $v.Sells}}
+                <tr>
+                    <td>{{$s.ExchangeOID}}</td>
+                    <td>{{$s.Price}}</td>
+                    <td>{{toEth $s.Volume}}</td>
+                </td>
+            {{end}}
+        </table>
+    {{end}}
+{{end}}

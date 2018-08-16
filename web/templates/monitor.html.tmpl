@@ -1,0 +1,23 @@
+{{define "content"}}
+    <market id="market"></market>
+{{end}}
+{{define "scripts"}}
+    <script type="text/javascript">
+        $(document).ready(function() {
+            {{range $t := .Tokens}}
+                app.tokens.push({
+                    "id": {{$t.ID}},
+                    "name": {{$t.Name}},
+                    "address": {{$t.Address}}
+                });
+            {{end}}
+            {{range $e := .Exchanges}}
+                app.exchanges.push({
+                    "id": {{$e.ID}},
+                    "name": {{$e.Name}},
+                    "address": {{$e.Address}}
+                });
+            {{end}}
+        });
+    </script>
+{{end}}

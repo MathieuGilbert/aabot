@@ -1,0 +1,3 @@
+CREATE USER aabot WITH LOGIN PASSWORD 'password';
+CREATE DATABASE aabot_dev;
+GRANT ALL ON DATABASE aabot_dev TO aabot;
