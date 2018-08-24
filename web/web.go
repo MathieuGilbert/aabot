@@ -9,9 +9,8 @@ import (
 	"path"
 	"strconv"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-redis/redis"
+	"github.com/gorilla/websocket"
 	"github.com/julienschmidt/httprouter"
 	"github.com/mathieugilbert/aabot/adapters"
 	"github.com/mathieugilbert/aabot/cmd/config"
@@ -28,13 +27,22 @@ type ServiceStore struct {
 	DB       orderbook.Datastore
 }
 
+var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+}
+
 // Start the web server
 func Start(ss *ServiceStore) {
 	router := httprouter.New()
 
 	router.GET("/", ss.root)
 	router.GET("/monitor", ss.monitor)
-	router.GET("/market/:exchange/:token", ss.market)
+	//router.GET("/market/:id", ss.market)
+	router.GET("/markets", ss.markets)
+	router.GET("/wallets", ss.wallets)
+	router.GET("/orderbook", ss.orderbook)
+	router.GET("/ws", ss.websocket)
 
 	// serve static assets
 	router.ServeFiles("/web/js/*filepath", http.Dir("web/js"))
@@ -104,7 +112,7 @@ func (ss *ServiceStore) monitor(w http.ResponseWriter, r *http.Request, _ httpro
 	}
 	data := &Data{}
 
-	exs, err := ss.DB.Exchanges()
+	exs, err := ss.DB.ExchangesJoined()
 	if err != nil {
 		log.Println("Error getting exchanges")
 		http.Error(w, "Error getting exchanges", http.StatusInternalServerError)
@@ -120,20 +128,21 @@ func (ss *ServiceStore) monitor(w http.ResponseWriter, r *http.Request, _ httpro
 	}
 	data.Tokens = tks
 
+	ed := ss.Ethereum.EtherDeltaInstance(exs[0].Address)
+	fm, _ := ed.FeeMake(nil)
+	ft, _ := ed.FeeTake(nil)
+
+	log.Printf("make: %v\ntake: %v\n", fm, ft)
+
 	t := pageTemplate("web/templates/monitor.html.tmpl")
 	t.Execute(w, data)
 }
 
+/*
 func (ss *ServiceStore) market(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
-	e, err := strconv.Atoi(p.ByName("exchange"))
+	mid, err := strconv.Atoi(p.ByName("id"))
 	if err != nil {
-		log.Printf("Invalid exchange ID: %v\n", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	t, err := strconv.Atoi(p.ByName("token"))
-	if err != nil {
-		log.Printf("Invalid token ID: %v\n", err)
+		log.Printf("Invalid market ID: %v\n", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -142,7 +151,7 @@ func (ss *ServiceStore) market(w http.ResponseWriter, r *http.Request, p httprou
 		Market *orderbook.Market `json:"market"`
 	}
 
-	m, err := ss.DB.MarketByExTok(e, t)
+	m, err := ss.DB.Market(mid)
 	if err != nil {
 		log.Printf("Error getting market: %v\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -150,31 +159,140 @@ func (ss *ServiceStore) market(w http.ResponseWriter, r *http.Request, p httprou
 	}
 	resp := &Response{Market: m}
 
-	tkn, err := ss.DB.Token(t)
-	if err != nil {
-		log.Printf("Error getting token: %v\n", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+*/
+func (ss *ServiceStore) wallets(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	type Response struct {
+		Wallets []*orderbook.Wallet `json:"wallets"`
 	}
 
-	user := "0xE80864b6B92c1F7186Fb97bbAE0b2098C4CAB014"
-	bal, err := ss.Ethereum.EtherDeltaInstance().BalanceOf(&bind.CallOpts{Pending: true}, common.HexToAddress(tkn.Address), common.HexToAddress(user))
-	log.Printf("Token: %v\nBalance: %v\n", tkn.Address, bal)
-	/*
-		var opts = &goed.GetTokenBalanceOpts{TokenAddress: tkn.Address, UserAddress: "0x3e25f0ba291f202188ae9bda3004a7b3a803599a"}
-		bal, err := ss.GoEd.GetTokenBalance(opts)
-	*/
+	ws, err := ss.DB.Wallets()
 	if err != nil {
-		log.Printf("Error getting balance: %v\ntoken: %v, user: %v\n", err, tkn.Address, user)
+		log.Printf("Error getting wallets: %v\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	resp.Market.Balance = bal.String()
+	resp := &Response{Wallets: ws}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 }
+
+func (ss *ServiceStore) markets(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	type Response struct {
+		Markets []*orderbook.Market `json:"markets"`
+	}
+
+	ms, err := ss.DB.MarketsJoined()
+	if err != nil {
+		log.Printf("Error getting markets: %v\n", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	resp := &Response{Markets: ms}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (ss *ServiceStore) orderbook(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	q := r.URL.Query()
+
+	mid, err := strconv.Atoi(q.Get("mid"))
+	if err != nil {
+		http.Error(w, "Invalid market id", http.StatusBadRequest)
+		return
+	}
+
+	n, err := strconv.Atoi(q.Get("n"))
+	if err != nil {
+		http.Error(w, "Invalid count", http.StatusBadRequest)
+		return
+	}
+
+	s, err := ss.DB.LowestSells(mid, n)
+	if err != nil {
+		http.Error(w, "Error getting lowest sells", http.StatusInternalServerError)
+		return
+	}
+	b, err := ss.DB.HighestBuys(mid, n)
+	if err != nil {
+		http.Error(w, "Error getting highest buys", http.StatusInternalServerError)
+		return
+	}
+
+	var os = make([]*orderbook.Order, 0)
+
+	for _, o := range s {
+		os = append(os, o)
+	}
+	for _, o := range b {
+		os = append(os, o)
+	}
+
+	type Response struct {
+		Orders []*orderbook.Order `json:"orders"`
+	}
+	resp := &Response{Orders: os}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (ss *ServiceStore) websocket(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	if r.Header.Get("Origin") != "http://"+r.Host {
+		log.Println("rejected 403", r.Header.Get("Origin"))
+		http.Error(w, "Origin not allowed", http.StatusForbidden)
+		return
+	}
+
+	c, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Error upgrading ws: %v\n", err)
+		http.Error(w, "Could not upgrade websocket connection", http.StatusBadRequest)
+		return
+	}
+	defer c.Close()
+
+	type Message struct {
+		Message string `json:"message"`
+		Value   string `json:"value"`
+	}
+
+	for {
+		mt, m, err := c.ReadMessage()
+		if err != nil {
+			log.Printf("WS read error: %v\n", err)
+			break
+		}
+
+		msg := &Message{}
+		if err := json.Unmarshal(m, msg); err != nil {
+			log.Printf("Bad message format: %v\n", err)
+			break
+		}
+
+		switch msg.Message {
+		case "wallet":
+			err = c.WriteMessage(mt, []byte(msg.Value))
+		default:
+			err = c.WriteMessage(mt, []byte("Unknown command"))
+		}
+
+		if err != nil {
+			log.Printf("WS write error: %v\n", err)
+			break
+		}
+	}
+}
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 func pageTemplate(ts ...string) *template.Template {
 	f := []string{"web/templates/index.html.tmpl"}

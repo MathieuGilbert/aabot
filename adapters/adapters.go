@@ -5,8 +5,14 @@ import (
 	"log"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/mathieugilbert/aabot/adapters/bat"
+	"github.com/mathieugilbert/aabot/adapters/dice"
+	"github.com/mathieugilbert/aabot/adapters/etherdelta"
+	"github.com/mathieugilbert/aabot/adapters/link"
+	"github.com/mathieugilbert/aabot/adapters/omg"
 )
 
 // Ethereum holds the contract instances
@@ -39,31 +45,91 @@ func (e *Ethereum) DexBotInstance() *DexBot {
 	return contract
 }
 
-// EtherDeltaInstance returns a reference to the contract instance
-func (e *Ethereum) EtherDeltaInstance() *EtherDelta {
-	// EtherDelta deployed address
-	addr := "0x8d12a197cb00d4747a1fe03395095ce2a5cc6819"
+// BATInstance returns a reference to the contract instance
+func (e *Ethereum) BATInstance(addr string) *bat.BAToken {
+	c, err := bat.NewBAToken(common.HexToAddress(addr), e.Client)
+	if err != nil {
+		log.Fatalf("Unable to bind to deployed instance: %v\n", addr)
+	}
+	return c
+}
 
-	// Create a new instance of the contract bound to a specific deployed contract
-	contract, err := NewEtherDelta(common.HexToAddress(addr), e.Client)
+// DICEInstance returns a reference to the contract instance
+func (e *Ethereum) DICEInstance(addr string) *dice.EtherollToken {
+	c, err := dice.NewEtherollToken(common.HexToAddress(addr), e.Client)
+	if err != nil {
+		log.Fatalf("Unable to bind to deployed instance: %v\n", addr)
+	}
+	return c
+}
+
+// LINKInstance returns a reference to the contract instance
+func (e *Ethereum) LINKInstance(addr string) *link.LinkToken {
+	c, err := link.NewLinkToken(common.HexToAddress(addr), e.Client)
+	if err != nil {
+		log.Fatalf("Unable to bind to deployed instance: %v\n", addr)
+	}
+	return c
+}
+
+// OMGInstance returns a reference to the contract instance
+func (e *Ethereum) OMGInstance(addr string) *omg.OMGToken {
+	c, err := omg.NewOMGToken(common.HexToAddress(addr), e.Client)
+	if err != nil {
+		log.Fatalf("Unable to bind to deployed instance: %v\n", addr)
+	}
+	return c
+}
+
+// EtherDeltaInstance returns a reference to the contract instance
+func (e *Ethereum) EtherDeltaInstance(addr string) *etherdelta.EtherDelta {
+	contract, err := etherdelta.NewEtherDelta(common.HexToAddress(addr), e.Client)
 	if err != nil {
 		log.Fatalf("Unable to bind to deployed instance of EtherDelta: %v\n", addr)
 	}
-	log.Printf("Found contract: EtherDelta %v.\n", addr)
-
 	return contract
 }
 
-// TokenBalance returns balance of token
-func (e *Ethereum) TokenBalance(name string) string {
-	//ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	//defer cancel()
+// TokenBalance returns balance of token, 0 on error
+func (e *Ethereum) TokenBalance(addr, tName, tAddr string) string {
+	var b *big.Int
+	var err error
 
-	bal, err := e.Client.BalanceAt(context.Background(), common.HexToAddress("0x7CB807347F3E4AE113a4D4128367936eaC78509A"), big.NewInt(0))
+	switch tName {
+	case "ETH":
+		b, err = e.Client.BalanceAt(context.Background(), common.HexToAddress(addr), nil)
+	case "BAT":
+		b, err = e.BATInstance(tAddr).BalanceOf(&bind.CallOpts{}, common.HexToAddress(addr))
+	case "DICE":
+		b, err = e.DICEInstance(tAddr).BalanceOf(&bind.CallOpts{}, common.HexToAddress(addr))
+	case "LINK":
+		b, err = e.LINKInstance(tAddr).BalanceOf(&bind.CallOpts{}, common.HexToAddress(addr))
+	case "OMG":
+		b, err = e.OMGInstance(tAddr).BalanceOf(&bind.CallOpts{}, common.HexToAddress(addr))
+	}
+
 	if err != nil {
-		log.Printf("Unable to get balance: %v\n", err)
+		log.Printf("Error getting %v(%v) balance for %v: %v\n", tName, tAddr, addr, err)
 		return "0"
 	}
 
-	return bal.String()
+	return b.String()
+}
+
+// ExchangeTokenBalance returns balance of token on exchange for user, 0 on error
+func (e *Ethereum) ExchangeTokenBalance(eName, eAddr, tAddr, uAddr string) string {
+	var b *big.Int
+	var err error
+
+	switch eName {
+	case "EtherDelta":
+		b, err = e.EtherDeltaInstance(eAddr).BalanceOf(&bind.CallOpts{}, common.HexToAddress(tAddr), common.HexToAddress(uAddr))
+	}
+
+	if err != nil {
+		log.Printf("Error getting token (%v) balance for %v: %v\n", tAddr, uAddr, err)
+		return "0"
+	}
+
+	return b.String()
 }

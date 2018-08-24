@@ -3,6 +3,7 @@
     "watch": "webpack --watch"
   },
   "dependencies": {
+    "bignumber.js": "^7.2.1",
     "bulma": "^0.7.1",
     "vue": "^2.5.17"
   },

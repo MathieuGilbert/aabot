@@ -18,6 +18,7 @@ type Configuration struct {
 	}
 	Ethereum struct {
 		ProviderURI string
+		UserAddress string
 	}
 	Redis struct {
 		Path string

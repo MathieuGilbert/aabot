@@ -1,36 +1,34 @@
 package orderbook
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
 
 // Order holds standing orders from exchanges, with enough info to take the trade
 type Order struct {
-	ID          int       `gorm:"primary_key"`
-	CreatedAt   time.Time `gorm:"not null"`
-	MarketID    int       `gorm:"not null"`       // FK
-	ExchangeOID string    `gorm:"unique"`         // Exchange's ID for the Order
-	Volume      string    `gorm:"not null"`       // in token
-	Price       string    `gorm:"not null;index"` // in ETH
-	IsBuy       bool      `gorm:"not null"`       // buy/sell
-	ExpireBlock string    ``                      // block number order will expire after
-	UserAddress string    ``                      // address of user who placed order
-	Nonce       string    ``                      // hash var
-	V           int       ``                      // hash var
-	R           string    ``                      // hash var
-	S           string    ``                      // hash var
-}
-
-// CreateOrder inserts the order
-func (db *DB) CreateOrder(o *Order) error {
-	return db.Create(o).Error
+	ID          int       `gorm:"primary_key" json:"id"`
+	CreatedAt   time.Time `gorm:"not null" json:"created_at"`
+	MarketID    int       `gorm:"not null" json:"market_id"`                      // FK
+	ExchangeOID string    `gorm:"unique" json:"exchange_o_id"`                    // Exchange's ID for the Order
+	Volume      string    `gorm:"not null" sql:"type:numeric" json:"volume"`      // in token
+	Price       string    `gorm:"not null;index" sql:"type:numeric" json:"price"` // in ETH
+	IsBuy       bool      `gorm:"not null" json:"is_buy"`                         // buy/sell
+	ExpireBlock string    `json:"expire_block"`                                   // block number order will expire after
+	UserAddress string    `json:"user_address"`                                   // address of user who placed order
+	Nonce       string    `json:"nonce"`                                          // hash var
+	V           int       `json:"v"`                                              // hash var
+	R           string    `json:"r"`                                              // hash var
+	S           string    `json:"s"`                                              // hash var
 }
 
 // BulkInsertOrders creates all the orders as bulk insert
 func (db *DB) BulkInsertOrders(orders []*Order) error {
+	db.LogMode(false)
+
 	cmd := "INSERT INTO orders(created_at, market_id, exchange_o_id, volume, price, is_buy, expire_block, user_address, nonce, v, r, s) VALUES "
-	const slots = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+	const slots = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 	var inserts []string
 	vals := []interface{}{}
 	t := time.Now()
@@ -41,19 +39,39 @@ func (db *DB) BulkInsertOrders(orders []*Order) error {
 	}
 
 	cmd = cmd + strings.Join(inserts, ",")
+	err := db.Exec(cmd, vals...).Error
+	db.LogMode(true)
 
-	return db.Exec(cmd, vals...).Error
+	return err
+}
+
+// PreviewOrderbook returns count buys and sells nearest midpoint
+func (db *DB) PreviewOrderbook(mid int, count int) ([]*Order, error) {
+	buys, err := db.HighestBuys(mid, count)
+	if err != nil {
+		return nil, err
+	}
+
+	sells, err := db.LowestSells(mid, count)
+	if err != nil {
+		return nil, err
+	}
+
+	sort.Slice(sells, func(i int, j int) bool {
+		return sells[i].Price > sells[j].Price
+	})
+
+	return append(sells, buys...), nil
 }
 
 // HighestBuys returns top count highest price buy orders for token
 func (db *DB) HighestBuys(mid int, count int) (os []*Order, err error) {
-	err = db.Where(&Order{MarketID: mid, IsBuy: true}).Order("price desc").Limit(count).Find(&os).Error
+	err = db.Table("orders").Where("market_id = ? AND is_buy = true", mid).Order("price desc").Limit(count).Find(&os).Error
 	return
 }
 
 // LowestSells returns bottom count lowest price sell orders for token
-func (db *DB) LowestSells(tid int, count int) (os []*Order, err error) {
-	// gorm ignores "false" value, so doesn't work as .Where(struct) like for the buys
-	err = db.Table("orders").Where("token_id = ? AND is_buy = false", tid).Order("price asc").Limit(count).Find(&os).Error
+func (db *DB) LowestSells(mid int, count int) (os []*Order, err error) {
+	err = db.Table("orders").Where("market_id = ? AND is_buy = false", mid).Order("price asc").Limit(count).Find(&os).Error
 	return
 }

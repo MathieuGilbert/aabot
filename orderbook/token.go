@@ -2,14 +2,14 @@ package orderbook
 
 // Token holds the name-address pair
 type Token struct {
-	ID      int    `gorm:"primary_key"`
-	Name    string `gorm:"not null;index"`
-	Address string `gorm:"not null"`
+	ID      int    `gorm:"primary_key" json:"id"`
+	Name    string `gorm:"not null;index" json:"name"`
+	Address string `gorm:"not null" json:"address"`
 }
 
 // Tokens returns all the tokens
 func (db *DB) Tokens() (ts []*Token, err error) {
-	err = db.Find(&ts).Error
+	err = db.Find(&ts).Order("id").Error
 	return
 }
 

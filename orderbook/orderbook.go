@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/jinzhu/gorm"
+	"github.com/mathieugilbert/aabot/adapters"
 )
 
 // DB wraps gorm.DB
@@ -18,13 +19,20 @@ type Datastore interface {
 	Seed(string) error
 	ClearTempTables()
 	Exchanges() ([]*Exchange, error)
+	ExchangesJoined() ([]*Exchange, error)
 	ExchangeByName(string) (Exchange, error)
 	Tokens() ([]*Token, error)
 	Token(int) (*Token, error)
 	TokenByName(string) (Token, error)
 	Markets() ([]*Market, error)
+	MarketsJoined() ([]*Market, error)
+	Market(int) (*Market, error)
 	MarketByExTok(int, int) (*Market, error)
-	CreateOrder(*Order) error
+	Balance(int) (string, error)
+	Wallets() ([]*Wallet, error)
+	SyncBalances(*adapters.Ethereum, string) error
+	SyncMarkets(*adapters.Ethereum, string) error
+
 	BulkInsertOrders([]*Order) error
 	HighestBuys(int, int) ([]*Order, error)
 	LowestSells(int, int) ([]*Order, error)
@@ -70,7 +78,12 @@ func (db *DB) Seed(fileName string) error {
 	}
 
 	for _, t := range s.Tokens {
-		if err := db.FirstOrCreate(&Token{}, t).Error; err != nil {
+		tok := &Token{}
+		if err := db.FirstOrCreate(tok, t).Error; err != nil {
+			return err
+		}
+
+		if err := db.FirstOrCreate(&Wallet{}, &Wallet{TokenID: tok.ID, Balance: "0"}).Error; err != nil {
 			return err
 		}
 	}
@@ -88,6 +101,7 @@ func (db *DB) Seed(fileName string) error {
 				}
 			}
 
+			// refetch latest from DB
 			ti, _ := db.TokenByName(t.Name)
 			ei, _ := db.ExchangeByName(e.Name)
 
@@ -109,7 +123,8 @@ func (db *DB) Seed(fileName string) error {
 // ClearTempTables empties the Orders, Tokens, Exchanges
 func (db *DB) ClearTempTables() {
 	db.Exec("DELETE FROM orders;")
-	db.Exec("DELETE FROM tokens;")
-	db.Exec("DELETE FROM exchanges;")
-	db.Exec("DELETE FROM markets;")
+	//db.Exec("DELETE FROM tokens;")
+	//db.Exec("DELETE FROM exchanges;")
+	//db.Exec("DELETE FROM markets;")
+	//db.Exec("DELETE FROM wallets;")
 }

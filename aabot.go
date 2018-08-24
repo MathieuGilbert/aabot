@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"sync"
 	"time"
 
 	"github.com/go-redis/redis"
@@ -14,7 +13,6 @@ import (
 	_ "github.com/jinzhu/gorm/dialects/postgres" // db driver
 	"github.com/mathieugilbert/aabot/adapters"
 	"github.com/mathieugilbert/aabot/cmd/config"
-	"github.com/mathieugilbert/aabot/cmd/helpers"
 
 	"github.com/mathieugilbert/aabot/orderbook"
 	"github.com/mathieugilbert/aabot/web"
@@ -46,10 +44,9 @@ func main() {
 		log.Fatal(err)
 	}
 	db.LogMode(true)
-	//db.ClearTempTables()
 
 	// seed config data
-	// https://forkdelta.github.io/config/main.json
+	db.ClearTempTables()
 	//db.Seed(SeedFile)
 
 	// Ethereum network
@@ -80,27 +77,31 @@ func main() {
 
 	// Wrap needed services
 	ss := &web.ServiceStore{
+		Config:   Config,
 		Ethereum: eth,
 		GoEd:     ed,
 		Redis:    r,
 		DB:       db,
 	}
-	/*
-		ts, _ := db.Tokens()
 
-			var wg sync.WaitGroup
-			wg.Add(len(ts))
+	if err := db.SyncBalances(eth, Config.Ethereum.UserAddress); err != nil {
+		log.Panicf("Unable to sync wallet balances: %v\n", err)
+	}
+	if err := db.SyncMarkets(eth, Config.Ethereum.UserAddress); err != nil {
+		log.Panicf("Unable to sync exchange balances: %v\n", err)
+	}
 
-			db.LogMode(false)
-			for _, t := range ts {
-				go loadOrderBook(ss, t, &wg)
-			}
+	es, err := db.Exchanges()
+	if err != nil {
+		log.Panicf("Unable to retrieve exchanges: %v\n", err)
+	}
 
-			wg.Wait()
-			log.Printf("Orderbooks loaded for %v tokens\n", len(ts))
+	for _, e := range es {
+		go func(e *orderbook.Exchange) {
+			e.LoadOrderbooks(db, &orderbook.ExchangeServices{GoEd: ed})
+		}(e)
+	}
 
-			db.LogMode(true)
-	*/
 	web.Start(ss)
 }
 
@@ -115,86 +116,6 @@ func loadConfig(fileName string) {
 // RedisKey formats the values into a consistent key format
 func RedisKey(exchange, token, orderID string) string {
 	return fmt.Sprintf("%v-%v-%v", exchange, token, orderID)
-}
-
-func loadOrderBook(ss *web.ServiceStore, token *orderbook.Token, wg *sync.WaitGroup) {
-	getOrderBookOpts := &goed.GetOrderBookOpts{
-		TokenAddress: token.Address,
-	}
-
-	orders, err := ss.GoEd.GetOrderBook(getOrderBookOpts)
-	if err != nil {
-		log.Panicf("Error getting order book: %v", err)
-		return
-	}
-
-	ex, _ := ss.DB.ExchangeByName("EtherDelta")
-	var os []*orderbook.Order
-
-	for _, order := range orders.Buys {
-		vol, err := helpers.FullNum(order.AvailableVolume)
-		if err != nil {
-			// ignore this order if the volume is unusable
-			continue
-		}
-
-		m, err := ss.DB.MarketByExTok(ex.ID, token.ID)
-		if err != nil {
-			// ignore this order if missing the record
-			continue
-		}
-
-		o := &orderbook.Order{
-			MarketID:    m.ID,
-			ExchangeOID: order.Id,
-			Volume:      vol,
-			Price:       order.Price,
-			IsBuy:       true,
-			ExpireBlock: order.Expires,
-			UserAddress: order.User,
-			Nonce:       order.Nonce,
-			V:           order.V,
-			R:           order.R,
-			S:           order.S,
-		}
-		os = append(os, o)
-	}
-
-	for _, order := range orders.Sells {
-		vol, err := helpers.FullNum(order.AvailableVolume)
-		if err != nil {
-			// ignore this order if the volume is unusable
-			continue
-		}
-
-		et, err := ss.DB.MarketByExTok(ex.ID, token.ID)
-		if err != nil {
-			// ignore this order if missing the record
-			continue
-		}
-
-		o := &orderbook.Order{
-			MarketID:    et.ID,
-			ExchangeOID: order.Id,
-			Volume:      vol,
-			Price:       order.Price,
-			IsBuy:       false,
-			ExpireBlock: order.Expires,
-			UserAddress: order.User,
-			Nonce:       order.Nonce,
-			V:           order.V,
-			R:           order.R,
-			S:           order.S,
-		}
-		os = append(os, o)
-	}
-
-	if err := ss.DB.BulkInsertOrders(os); err != nil {
-		log.Panicf("Error inserting orders: %v\n", err)
-		return
-	}
-
-	wg.Done()
 }
 
 func run() {

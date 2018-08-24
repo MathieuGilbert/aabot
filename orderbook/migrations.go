@@ -32,22 +32,22 @@ func start(db *gorm.DB) error {
 	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		// create tables
 		{
-			ID: "20180815185557",
+			ID: "20180824125919",
 			Migrate: func(tx *gorm.DB) error {
 				type Order struct {
-					ID          int       `gorm:"primary_key"`
-					CreatedAt   time.Time `gorm:"not null"`
-					MarketID    int       `gorm:"not null"`       // FK
-					ExchangeOID string    `gorm:"unique"`         // Exchange's ID for the Order
-					Volume      string    `gorm:"not null"`       // in token
-					Price       string    `gorm:"not null;index"` // in ETH
-					IsBuy       bool      `gorm:"not null"`       // buy/sell
-					ExpireBlock string    ``                      // block number order will expire after
-					UserAddress string    ``                      // address of user who placed order
-					Nonce       string    ``                      // hash var
-					V           int       ``                      // hash var
-					R           string    ``                      // hash var
-					S           string    ``                      // hash var
+					ID          int       `gorm:"primary_key" json:"id"`
+					CreatedAt   time.Time `gorm:"not null" json:"created_at"`
+					MarketID    int       `gorm:"not null" json:"market_id"`                      // FK
+					ExchangeOID string    `gorm:"unique" json:"exchange_o_id"`                    // Exchange's ID for the Order
+					Volume      string    `gorm:"not null" sql:"type:numeric" json:"volume"`      // in token
+					Price       string    `gorm:"not null;index" sql:"type:numeric" json:"price"` // in ETH
+					IsBuy       bool      `gorm:"not null" json:"is_buy"`                         // buy/sell
+					ExpireBlock string    `json:"expire_block"`                                   // block number order will expire after
+					UserAddress string    `json:"user_address"`                                   // address of user who placed order
+					Nonce       string    `json:"nonce"`                                          // hash var
+					V           int       `json:"v"`                                              // hash var
+					R           string    `json:"r"`                                              // hash var
+					S           string    `json:"s"`                                              // hash var
 				}
 				type Token struct {
 					ID      int    `gorm:"primary_key"`
@@ -55,10 +55,11 @@ func start(db *gorm.DB) error {
 					Address string `gorm:"not null"`
 				}
 				type Exchange struct {
-					ID           int    `gorm:"primary_key"`
-					Name         string `gorm:"not null;index"`
-					Address      string `gorm:"not null"`
-					WebsocketURI string `gorm:"not null"`
+					ID           int     `gorm:"primary_key"`
+					Name         string  `gorm:"not null;index"`
+					Address      string  `gorm:"not null"`
+					WebsocketURI string  `gorm:"not null"`
+					Fee          float32 `gorm:"not null"`
 				}
 				type Market struct {
 					ID         int    `gorm:"primary_key"`
@@ -66,6 +67,11 @@ func start(db *gorm.DB) error {
 					TokenID    int    `gorm:"not null"`
 					Balance    string `gorm:"default:'0'"`
 					Active     bool   `gorm:"not null"`
+				}
+				type Wallet struct {
+					ID      int    `gorm:"primary_key"`
+					TokenID int    `gorm:"token_id"`
+					Balance string `gorm:"balance"`
 				}
 
 				if err := tx.CreateTable(&Token{}).Error; err != nil {
@@ -90,6 +96,13 @@ func start(db *gorm.DB) error {
 					return err
 				}
 				if err := tx.Model(&Order{}).AddForeignKey("market_id", "markets(id)", "RESTRICT", "RESTRICT").Error; err != nil {
+					return err
+				}
+
+				if err := tx.CreateTable(&Wallet{}).Error; err != nil {
+					return err
+				}
+				if err := tx.Model(&Wallet{}).AddForeignKey("token_id", "tokens(id)", "RESTRICT", "RESTRICT").Error; err != nil {
 					return err
 				}
 
