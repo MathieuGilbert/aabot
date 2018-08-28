@@ -25,3 +25,9 @@ func (db *DB) TokenByName(name string) (t Token, err error) {
 	err = db.Where(&Token{Name: name}).First(&t).Error
 	return
 }
+
+// TokenByAddress returns a token by address
+func (db *DB) TokenByAddress(addr string) (t Token, err error) {
+	err = db.Where(&Token{Address: addr}).First(&t).Error
+	return
+}

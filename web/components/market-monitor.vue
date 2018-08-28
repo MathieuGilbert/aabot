@@ -1,7 +1,7 @@
 <template>
     <div class="columns">
         <div class="column is-narrow">
-            <div class="cell cell-header" @click="pingServer">
+            <div class="cell cell-header">
                 &nbsp;
             </div>
             <div class="cell" v-for="token in tokens" :key="token.id">
@@ -34,7 +34,7 @@
                         <i class="fas fa-power-off"></i>
                     </span>
                     <ul v-if="market.orders">
-                        <li v-for="order in market.orders" :key="order.id" class="">                            
+                        <li v-for="order in market.orders" :key="order.id" class="">
                             <span v-bind:class="[order.is_buy ? 'on' : 'off']">{{parseFloat(order.price).toFixed(6)}}</span>
                             <span class="">{{parseFloat(toEth(order.volume)).toFixed(3)}}</span>
                         </li>
@@ -133,13 +133,6 @@
                                 m.orders = [];
                                 window.Vue.set(m.orders, 'orders', data.orders)
                             }
-
-                            //window.Vue.set(window.app.exchanges[e].markets[m], 'orders', data.orders)
-                            //for (var o = 0; o < data.orders.length; o++) {
-                            //    var order = data.orders[o];
-                            //    var market = window.app.exchanges[e].markets[m];
-                            //    market.orders.push(order);
-                            //}
                         }).fail(function(xhr, status, error) {
                             console.log("Error loading orderbook for market " + market);
                         });
@@ -166,7 +159,6 @@
                 handler: function(v, ov) {
                     this.updateWallets();
                     this.updateMarkets();
-                    //this.getOrderbooks();
                 },
                 deep: true
             }

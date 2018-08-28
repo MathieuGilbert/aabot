@@ -128,12 +128,6 @@ func (ss *ServiceStore) monitor(w http.ResponseWriter, r *http.Request, _ httpro
 	}
 	data.Tokens = tks
 
-	ed := ss.Ethereum.EtherDeltaInstance(exs[0].Address)
-	fm, _ := ed.FeeMake(nil)
-	ft, _ := ed.FeeTake(nil)
-
-	log.Printf("make: %v\ntake: %v\n", fm, ft)
-
 	t := pageTemplate("web/templates/monitor.html.tmpl")
 	t.Execute(w, data)
 }

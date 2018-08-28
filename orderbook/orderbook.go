@@ -24,6 +24,7 @@ type Datastore interface {
 	Tokens() ([]*Token, error)
 	Token(int) (*Token, error)
 	TokenByName(string) (Token, error)
+	TokenByAddress(string) (Token, error)
 	Markets() ([]*Market, error)
 	MarketsJoined() ([]*Market, error)
 	Market(int) (*Market, error)
@@ -31,8 +32,7 @@ type Datastore interface {
 	Balance(int) (string, error)
 	Wallets() ([]*Wallet, error)
 	SyncBalances(*adapters.Ethereum, string) error
-	SyncMarkets(*adapters.Ethereum, string) error
-
+	SyncMarketBalances(*adapters.Ethereum, string) error
 	BulkInsertOrders([]*Order) error
 	HighestBuys(int, int) ([]*Order, error)
 	LowestSells(int, int) ([]*Order, error)
@@ -120,11 +120,11 @@ func (db *DB) Seed(fileName string) error {
 	return nil
 }
 
-// ClearTempTables empties the Orders, Tokens, Exchanges
+// ClearTempTables deletes records from tables
 func (db *DB) ClearTempTables() {
 	db.Exec("DELETE FROM orders;")
+	//db.Exec("DELETE FROM markets;")
 	//db.Exec("DELETE FROM tokens;")
 	//db.Exec("DELETE FROM exchanges;")
-	//db.Exec("DELETE FROM markets;")
 	//db.Exec("DELETE FROM wallets;")
 }

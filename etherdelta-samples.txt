@@ -1,0 +1,165 @@
+{
+Id:                     0xbuy
+Amount:                 -0.1178000000 BAT
+Price:                  0.00079 ETH/BAT
+AmountGet:              38.00 BAT
+AmountFilled:           37.88 BAT
+AvailableVolume:        0.1178 BAT
+AmountGive:             0.030020 ETH
+AvailableVolumeBase:    0.0000930620 ETH
+}
+
+
+{
+Id:                     0xsell
+Amount:                 0.000000009263354285
+Price:                  0.0006999999999
+AmountGet:              6.798400296493446 ETH
+AmountFilled:           6.798400296486961 ETH
+AvailableVolumeBase:    0.000000000006484348 ETH
+AmountGive:             9712.000 BAT
+AvailableVolume:        0.000000009263354285 BAT
+}
+
+
+
+// orders message
+42[
+    "orders",{
+        "buys":[
+            {
+                "id":"0x0592d207bc68421367498bb531e553c50195d99602ab59d2266846f6b275596e_buy",
+                "user":"0x713d85a581afd3716cfc118ebb03c283664cebae",
+                "state":"OPEN",
+                "tokenGet":"0x2c82c73d5b34aa015989462b2948cd616a37641f",
+                "amountGet":"19999999641870202416973",
+                "tokenGive":"0x0000000000000000000000000000000000000000",
+                "amountGive":"2309326758648063000",
+                "expires":"6212666",
+                "nonce":"5495788791832421",
+                "v":27,
+                "r":"0x9904e2a4ed7788f8761be786ecff175ef087f540f132990bb9a327ad36abf06a",
+                "s":"0x3aa782c83df69fc4d35cc8b02d1fd99d0a2a67c8b5dd6b9881634d69e380081e",
+                "date":"2018-08-25T19:09:03.004206",
+                "updated":"2018-08-25T19:08:52",
+                "availableVolume":"19999999641870202416973",
+                "ethAvailableVolume":"19999.99964",
+                "availableVolumeBase":"2.309326759e+18",
+                "ethAvailableVolumeBase":"2.309326759",
+                "amount":"-1.999999964e+22",
+                "amountFilled":"0",
+                "price":"0.0001154663400"
+            },
+            {
+                "id":"0x820f1fb76afb93d118299639aa9f1f63560b5da5d25f1abf37bfb18cb9aa5f6c_buy",
+                "user":"0xcee4c7693e43df84c221288baa9e274a68514760",
+                "state":"OPEN",
+                "tokenGet":"0xc42209accc14029c1012fb5680d95fbd6036e2a0",
+                "amountGet":"5.0e+21",
+                "tokenGive":"0x0000000000000000000000000000000000000000",
+                "amountGive":"2.205065e+18",
+                "expires":"6212666",
+                "nonce":"6173271414414416",
+                "v":28,
+                "r":"0xe2ccd5fc691397687b049fd971a6bb487767f372fd762ecd57d0825ff288a572",
+                "s":"0x7da82d5bee99b83daf4f425c2db37f131d73ca65dd65c4c3303f0ad967409a51",
+                "date":"2018-08-25T19:09:03.013487",
+                "updated":"2018-08-25T19:08:52",
+                "availableVolume":"5.0e+21",
+                "ethAvailableVolume":"5000.000000",
+                "availableVolumeBase":"2.205065e+18",
+                "ethAvailableVolumeBase":"2.205065000",
+                "amount":"-5.0e+21",
+                "amountFilled":"0",
+                "price":"0.000441013"
+            },
+            {
+                "id":"0x36497e00699b08d14c9e60cdaf1a9396f195947946da17ff5b5d5dcfd1fda4a1_buy",
+                "user":"0x713d85a581afd3716cfc118ebb03c283664cebae",
+                "state":"OPEN",
+                "tokenGet":"0x12b306fa98f4cbb8d4457fdff3a0a0a56f07ccdf",
+                "amountGet":"4.0e+21",
+                "tokenGive":"0x0000000000000000000000000000000000000000",
+                "amountGive":"1427656000000001000",
+                "expires":"6212667",
+                "nonce":"5084659388252928",
+                "v":28,
+                "r":"0x15e437bc867b4bfd7235065428762eda0fc0f1d3aa0ae738f7e478ed47020203",
+                "s":"0x782c951a037c672424a5e92a0a6a2e390d6047cdec92fd5ccae460388ac8c892",
+                "date":"2018-08-25T19:09:03.022907",
+                "updated":"2018-08-25T19:08:52",
+                "availableVolume":"4.0e+21",
+                "ethAvailableVolume":"4000.000000",
+                "availableVolumeBase":"1.42765600e+18",
+                "ethAvailableVolumeBase":"1.427656000",
+                "amount":"-4.0e+21",
+                "amountFilled":"0",
+                "price":"0.000356914"
+            },
+            {
+                "id":"0x6802148c5002916d0645b26b743a19ca60c08fec5f82174e54496e8a3b8be3ed_buy",
+                "user":"0x713d85a581afd3716cfc118ebb03c283664cebae",
+                "state":"OPEN",
+                "tokenGet":"0x12b306fa98f4cbb8d4457fdff3a0a0a56f07ccdf",
+                "amountGet":"4.0e+21",
+                "tokenGive":"0x0000000000000000000000000000000000000000",
+                "amountGive":"1.5416160004e+18",
+                "expires":"6212672",
+                "nonce":"8312870089942463",
+                "v":27,
+                "r":"0xf3beb736363c3b3062e788e89795eb37ba9a1bdd68ec958e9413db0ab273fb02",
+                "s":"0x1e05b477f3020af71a5e88d81aab4d241ea1e5a41f11d5312f7d73e3bd129510",
+                "date":"2018-08-25T19:09:04.209955",
+                "updated":"2018-08-25T19:08:52",
+                "availableVolume":"4.0e+21",
+                "ethAvailableVolume":"4000.000000",
+                "availableVolumeBase":"1.541616000e+18",
+                "ethAvailableVolumeBase":"1.541616000",
+                "amount":"-4.0e+21",
+                "amountFilled":"0",
+                "price":"0.000385404"
+            }
+        ],
+        "sells":[
+
+        ]
+    }
+]
+
+
+// trades message (parsed):
+[
+    {
+        "txHash":"0x9d674c8fa14266c1a5e7b783d3a16352f1b2084fdd7ef3ae4b98ee962b763952",
+        "date":"2018-08-26T14:14:39",
+        "price":"0.0003800000000",
+        "side":"sell",
+        "amount":"100.6878676",
+        "amountBase":"0.03826138969",
+        "buyer":"0x5ff531736002b2a9cd4dab79a55ab504f1dc3195",
+        "seller":"0x997d388604f2d1b25d58a92dbe0fe36348049104",
+        "tokenAddr":"0x48ff53777f747cfb694101222a944de070c15d36"
+    },
+    {
+        "txHash":"0x3f02d219f906cf13566ea59ede0c9e64f1170db0072842112b62719c71aa3b6a",
+        "date":"2018-08-26T14:14:39",
+        "price":"0.0001",
+        "side":"sell",
+        "amount":"508.4537932",
+        "amountBase":"0.05084537932",
+        "buyer":"0x5f1fd2fb5d74403824a26cdf6ffcd809056aed56",
+        "seller":"0xc11ef9d7e2f6b7b2118ac3725d0abdaf7b6c4a6d",
+        "tokenAddr":"0xcc53c2e5e2421cb5a5307ed1c229816d71266292"
+    },
+    {
+        "txHash":"0x4bd9b6ef7892e8e8e5599126a6bd8cd6da5e487b0f2fa410877c8864afafa3dc",
+        "date":"2018-08-26T14:14:30",
+        "price":"0.002120000000",
+        "side":"buy",
+        "amount":"119.3438311",
+        "amountBase":"0.2530089219",
+        "buyer":"0x6abe2687c782a398b2fa7d7b7927704edf8eadf3",
+        "seller":"0xf7156a5bd1e403984a2218b1f6d2d36615a57933",
+        "tokenAddr":"0x4156d3342d5c385a87d264f90653733592000581"
+    }
+]
