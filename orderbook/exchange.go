@@ -110,8 +110,13 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				log.Println("ReadMessage error:", err)
-				break
+				if err.Error() == "websocket: close 1000 (normal)" {
+					log.Println("Websocket closed")
+					break
+				} else {
+					log.Println("ReadMessage error:", err)
+					continue
+				}
 			}
 
 			match := respRxp.FindStringSubmatch(string(message))
@@ -122,7 +127,9 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 
 			switch match[1] {
 			case "0":
-				log.Printf("Connected: %v\n", match[2])
+				log.Printf("Open: %v\n", match[2])
+			case "40":
+				log.Println("Connected to websocket")
 			case "42":
 				var orderRxp = regexp.MustCompile(`\[.(.*?).,(.*)]`)
 				matchOrder := orderRxp.FindStringSubmatch(match[2])
@@ -160,10 +167,6 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 						Seller     string `json:"seller"`
 						TokenAddr  string `json:"tokenAddr"`
 					}
-					//type Resp struct {
-					//	Trades []*Trade
-					//}
-					//resp := &Resp{}
 					var trades []*Trade
 
 					if err = json.Unmarshal([]byte(matchOrder[2]), &trades); err != nil {
@@ -186,7 +189,9 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 
 						var wg sync.WaitGroup
 						wg.Add(1)
-						go m.LoadOrderbook(db, s, &wg)
+						go func(m *Market) {
+							m.LoadOrderbook(db, s, &wg)
+						}(m)
 						wg.Wait()
 
 						log.Printf("New trades, refreshed orderbook for token %v on exchange %v\n", t.Name, e.Name)
@@ -197,13 +202,8 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 				log.Printf("other message: %v\n", match[0])
 			}
 		}
-	}()
 
-	// getMarket
-	err = c.WriteMessage(websocket.TextMessage, []byte("42['getMarket', {}]"))
-	if err != nil {
-		log.Println("error: ", err)
-	}
+	}()
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -212,8 +212,8 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 		select {
 		case <-done:
 			return nil
-		case t := <-ticker.C:
-			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
+		case <-ticker.C:
+			err := c.WriteMessage(websocket.PingMessage, []byte{})
 			if err != nil {
 				log.Println("WriteMessage error:", err)
 				return err
@@ -230,7 +230,9 @@ func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.
 			}
 			select {
 			case <-done:
+				log.Println("DONE")
 			case <-time.After(time.Second):
+				log.Println("A SECOND")
 			}
 			return nil
 		}
