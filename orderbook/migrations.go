@@ -32,13 +32,13 @@ func start(db *gorm.DB) error {
 	m := gormigrate.New(db, gormigrate.DefaultOptions, []*gormigrate.Migration{
 		// create tables
 		{
-			ID: "20180824125919",
+			ID: "20180909110929",
 			Migrate: func(tx *gorm.DB) error {
 				type Order struct {
 					ID          int       `gorm:"primary_key" json:"id"`
 					CreatedAt   time.Time `gorm:"not null" json:"created_at"`
 					MarketID    int       `gorm:"not null" json:"market_id"`                      // FK
-					ExchangeOID string    `gorm:"unique" json:"exchange_o_id"`                    // Exchange's ID for the Order
+					ExchangeOID string    `json:"exchange_o_id"`                                  // Exchange's ID for the Order
 					Volume      string    `gorm:"not null" sql:"type:numeric" json:"volume"`      // in token
 					Price       string    `gorm:"not null;index" sql:"type:numeric" json:"price"` // in ETH
 					IsBuy       bool      `gorm:"not null" json:"is_buy"`                         // buy/sell
@@ -48,6 +48,7 @@ func start(db *gorm.DB) error {
 					V           int       `json:"v"`                                              // hash var
 					R           string    `json:"r"`                                              // hash var
 					S           string    `json:"s"`                                              // hash var
+					Hash        string    `gorm:"index" json:"hash"`                              // computed hash
 				}
 				type Token struct {
 					ID      int    `gorm:"primary_key"`
@@ -55,11 +56,10 @@ func start(db *gorm.DB) error {
 					Address string `gorm:"not null"`
 				}
 				type Exchange struct {
-					ID           int     `gorm:"primary_key"`
-					Name         string  `gorm:"not null;index"`
-					Address      string  `gorm:"not null"`
-					WebsocketURI string  `gorm:"not null"`
-					Fee          float32 `gorm:"not null"`
+					ID      int     `gorm:"primary_key"`
+					Name    string  `gorm:"not null;index"`
+					Address string  `gorm:"not null"`
+					Fee     float64 `gorm:"not null"`
 				}
 				type Market struct {
 					ID         int    `gorm:"primary_key"`

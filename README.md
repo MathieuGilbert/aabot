@@ -29,3 +29,13 @@ solc --abi -o adapters/dexbot ethereum/contracts/DexBot.sol
 Install dependencies: `npm install`
 
 Live reloading: `npm run watch`
+
+
+#### Kill process running on a port:
+
+```
+lsof -t -i tcp:5000 | xargs kill
+```
+
+
+#### TODO:

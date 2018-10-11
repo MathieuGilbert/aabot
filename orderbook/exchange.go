@@ -1,33 +1,22 @@
 package orderbook
 
 import (
-	"bytes"
-	"encoding/json"
 	"log"
 	"math"
-	"os"
-	"regexp"
 	"strconv"
 	"sync"
-	"time"
 
-	"github.com/gorilla/websocket"
 	goed "github.com/mathieugilbert/go-etherdelta"
+	idex "github.com/mathieugilbert/go-idex"
 )
 
 // Exchange holds exchange-specific details
 type Exchange struct {
-	ID           int       `gorm:"primary_key" json:"id"`
-	Name         string    `gorm:"not null;index" json:"name"`
-	Address      string    `gorm:"not null" json:"address"`
-	WebsocketURI string    `gorm:"not null" json:"websocket_uri"`
-	Fee          float32   `gorm:"not null" json:"fee"`
-	Markets      []*Market `json:"markets"`
-}
-
-// ExchangeServices holds instantiated services for each exchange
-type ExchangeServices struct {
-	GoEd *goed.Service
+	ID      int       `gorm:"primary_key" json:"id"`
+	Name    string    `gorm:"not null;index" json:"name"`
+	Address string    `gorm:"not null" json:"address"`
+	Fee     float64   `gorm:"not null" json:"fee"`
+	Markets []*Market `json:"markets"`
 }
 
 // Exchanges returns all the exchanges
@@ -56,6 +45,12 @@ func (db *DB) ExchangesJoined() (es []*Exchange, err error) {
 	return
 }
 
+// ExchangeByMarket returns the Exchange for the market ID
+func (db *DB) ExchangeByMarket(mid int) (e Exchange, err error) {
+	err = db.Joins("left join markets on markets.exchange_id = exchanges.id").Where("markets.id = ?", mid).First(&e).Error
+	return
+}
+
 // ExchangeByName returns an exchange by name
 func (db *DB) ExchangeByName(name string) (e Exchange, err error) {
 	err = db.Where(&Exchange{Name: name}).First(&e).Error
@@ -63,7 +58,7 @@ func (db *DB) ExchangeByName(name string) (e Exchange, err error) {
 }
 
 // LoadOrderbooks fetches and stores open orders for active markets on the exchange
-func (e *Exchange) LoadOrderbooks(db *DB, s *ExchangeServices) error {
+func (e *Exchange) LoadOrderbooks(db *DB) error {
 	ms, err := db.ExchangeMarketsJoined(e.ID)
 	if err != nil {
 		log.Printf("Error getting markets for exchange %v: %v\n", e.Name, err)
@@ -75,198 +70,68 @@ func (e *Exchange) LoadOrderbooks(db *DB, s *ExchangeServices) error {
 	wg.Add(len(ms))
 
 	for _, m := range ms {
-		go m.LoadOrderbook(db, s, &wg)
+		switch e.Name {
+		case "EtherDelta":
+			go m.LoadOrderbookEtherDelta(db, &wg)
+		case "IDEX":
+			go m.LoadOrderbookIDEX(db, &wg)
+		}
 	}
 
 	wg.Wait()
 	return nil
 }
 
-// SyncOrderbook connects to exchange websocket and updates orderbook as messages arrive
-func (e *Exchange) SyncOrderbook(db *DB, s *ExchangeServices, interrupt chan os.Signal) error {
-	log.Printf("Connecting to %v websocket...", e.Name)
-
-	url := "wss://api.forkdelta.com/socket.io/?EIO=3&transport=websocket"
-	c, resp, err := websocket.DefaultDialer.Dial(url, nil)
-	if err == websocket.ErrBadHandshake {
-		buf := new(bytes.Buffer)
-		buf.ReadFrom(resp.Body)
-		log.Printf("%+v\n", buf.String())
-		log.Printf("handshake failed with status %d", resp.StatusCode)
-	}
+// ProcessNewOrdersEtherDelta processes orders in the orderbook
+func (e *Exchange) ProcessNewOrdersEtherDelta(db *DB, ob *goed.OrderBook) (int, error) {
+	os, err := e.OrderbookToOrdersEtherDelta(db, ob)
 	if err != nil {
-		log.Panicf("Dial(%v) error: %v\n", url, err)
+		return 0, err
 	}
-	defer c.Close()
-
-	log.Printf("Connected to %v websocket.", e.Name)
-
-	done := make(chan struct{})
-
-	var respRxp = regexp.MustCompile(`(\d+)(.*)`)
-
-	go func() {
-		defer close(done)
-		for {
-			_, message, err := c.ReadMessage()
-			if err != nil {
-				if err.Error() == "websocket: close 1000 (normal)" {
-					log.Println("Websocket closed")
-					break
-				} else {
-					log.Println("ReadMessage error:", err)
-					continue
-				}
-			}
-
-			match := respRxp.FindStringSubmatch(string(message))
-			if len(match) != 3 {
-				log.Printf("Regex didn't find matches in: %v", message)
-				continue
-			}
-
-			switch match[1] {
-			case "0":
-				log.Printf("Open: %v\n", match[2])
-			case "40":
-				log.Println("Connected to websocket")
-			case "42":
-				var orderRxp = regexp.MustCompile(`\[.(.*?).,(.*)]`)
-				matchOrder := orderRxp.FindStringSubmatch(match[2])
-				if len(matchOrder) != 3 {
-					log.Printf("42, not orders: %v\n", match[2])
-					break
-				}
-
-				switch matchOrder[1] {
-				case "orders":
-					resp := &goed.OrderBook{}
-
-					if err = json.Unmarshal([]byte(matchOrder[2]), resp); err != nil {
-						log.Printf("Can't unmarshal orders: %v\n%v\n", matchOrder[2], err)
-						break
-					}
-
-					count, err := processNewOrders(db, e, resp)
-					if err != nil {
-						log.Printf("Unable to process new orders: %v\n", err)
-						break
-					}
-					if count > 0 {
-						log.Printf("Inserted %v new orders\n", count)
-					}
-				case "trades":
-					type Trade struct {
-						TxHash     string `json:"txHash"`
-						Date       string `json:"date"`
-						Price      string `json:"price"`
-						Side       string `json:"side"`
-						Amount     string `json:"amount"`
-						AmountBase string `json:"amountBase"`
-						Buyer      string `json:"buyer"`
-						Seller     string `json:"seller"`
-						TokenAddr  string `json:"tokenAddr"`
-					}
-					var trades []*Trade
-
-					if err = json.Unmarshal([]byte(matchOrder[2]), &trades); err != nil {
-						log.Panicf("Can't unmarshal trades: %v\n%v\n", matchOrder[2], err)
-						break
-					}
-
-					for _, trade := range trades {
-						t, err := db.TokenByAddress(trade.TokenAddr)
-						if err != nil {
-							log.Printf("Don't care about %v token\n", trade.TokenAddr)
-							continue
-						}
-						// re-fetch orderbook for token
-						m, err := db.MarketByExTok(e.ID, t.ID)
-						if err != nil {
-							log.Printf("Error fetching market for exchange %v, token %v\n", e.ID, t.ID)
-							continue
-						}
-
-						var wg sync.WaitGroup
-						wg.Add(1)
-						go func(m *Market) {
-							m.LoadOrderbook(db, s, &wg)
-						}(m)
-						wg.Wait()
-
-						log.Printf("New trades, refreshed orderbook for token %v on exchange %v\n", t.Name, e.Name)
-					}
-
-				}
-			default:
-				log.Printf("other message: %v\n", match[0])
-			}
-		}
-
-	}()
-
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-done:
-			return nil
-		case <-ticker.C:
-			err := c.WriteMessage(websocket.PingMessage, []byte{})
-			if err != nil {
-				log.Println("WriteMessage error:", err)
-				return err
-			}
-		case <-interrupt:
-			log.Println("interrupt")
-
-			// Cleanly close the connection by sending a close message and then
-			// waiting (with timeout) for the server to close the connection.
-			err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-			if err != nil {
-				log.Println("Error writing close message:", err)
-				return err
-			}
-			select {
-			case <-done:
-				log.Println("DONE")
-			case <-time.After(time.Second):
-				log.Println("A SECOND")
-			}
-			return nil
-		}
+	if len(os) == 0 {
+		return 0, nil
 	}
+
+	if err := db.BulkInsertOrders(os); err != nil {
+		return 0, err
+	}
+	return len(os), nil
 }
 
-func processNewOrders(db *DB, e *Exchange, ob *goed.OrderBook) (int, error) {
-	var volumeThreshold = 0.001 * math.Pow10(18)
-
+// OrderbookToOrdersEtherDelta converts an ED orderbook into slice of aabot orders
+func (e *Exchange) OrderbookToOrdersEtherDelta(db *DB, ob *goed.OrderBook) ([]*Order, error) {
+	var volumeThreshold = 0.001 * math.Pow10(18) // wei
 	var os []*Order
+	mids := make(map[string]int) // token address to market id
 
 	for _, order := range ob.Buys {
 		vol, err := strconv.ParseFloat(order.AvailableVolumeBase, 32)
 		if err != nil {
-			log.Printf("ParseFloat(%v) error: %v\n", order.AvailableVolumeBase, err)
-			continue
+			return nil, err
 		}
 		if vol < volumeThreshold {
+			// skip order since too small
 			continue
 		}
 
-		t, err := db.TokenByAddress(order.TokenGet)
-		if err != nil {
-			// if not in db, we don't care about it
-			continue
-		}
-
-		m, err := db.MarketByExTok(e.ID, t.ID)
-		if err != nil {
-			continue
+		// cache this in a map
+		key := order.TokenGet
+		if mid, ok := mids[key]; ok {
+			if mid == 0 {
+				continue
+			}
+		} else {
+			m, err := db.MarketByExTokAddr(e.ID, key)
+			if err != nil {
+				// if not in db, we don't care about it
+				mids[key] = 0
+				continue
+			}
+			mids[key] = m.ID
 		}
 
 		o := &Order{
-			MarketID:    m.ID,
+			MarketID:    mids[key],
 			ExchangeOID: order.Id,
 			Volume:      order.AvailableVolume,
 			Price:       order.Price,
@@ -285,26 +150,31 @@ func processNewOrders(db *DB, e *Exchange, ob *goed.OrderBook) (int, error) {
 	for _, order := range ob.Sells {
 		vol, err := strconv.ParseFloat(order.AvailableVolumeBase, 32)
 		if err != nil {
-			log.Printf("ParseFloat(%v) error: %v\n", order.AvailableVolumeBase, err)
-			continue
+			return nil, err
 		}
 		if vol < volumeThreshold {
+			// skip order since too small
 			continue
 		}
 
-		t, err := db.TokenByAddress(order.TokenGive)
-		if err != nil {
-			// if not in db, we don't care about it
-			continue
-		}
-
-		m, err := db.MarketByExTok(e.ID, t.ID)
-		if err != nil {
-			continue
+		// cache this in a map
+		key := order.TokenGive
+		if mid, ok := mids[key]; ok {
+			if mid == 0 {
+				continue
+			}
+		} else {
+			m, err := db.MarketByExTokAddr(e.ID, key)
+			if err != nil {
+				// if not in db, we don't care about it
+				mids[key] = 0
+				continue
+			}
+			mids[key] = m.ID
 		}
 
 		o := &Order{
-			MarketID:    m.ID,
+			MarketID:    mids[key],
 			ExchangeOID: order.Id,
 			Volume:      order.AvailableVolume,
 			Price:       order.Price,
@@ -320,12 +190,95 @@ func processNewOrders(db *DB, e *Exchange, ob *goed.OrderBook) (int, error) {
 		os = append(os, o)
 	}
 
-	if len(os) == 0 {
-		return 0, nil
+	return os, nil
+}
+
+// OrderbookToOrdersIdex converts an IDEX orderbook into slice of aabot orders
+func (e *Exchange) OrderbookToOrdersIdex(db *DB, ob *idex.OrderBook) ([]*Order, error) {
+	var volumeThreshold = 0.001 // ether
+	var os []*Order
+	mids := make(map[string]int) // token address to market id
+
+	for _, order := range ob.Bids {
+		vol, err := strconv.ParseFloat(order.Total, 32)
+		if err != nil {
+			return nil, err
+		}
+
+		if vol < volumeThreshold {
+			// skip order since too small
+			continue
+		}
+
+		// cache this in a map
+		key := order.Params.TokenBuy
+		if mid, ok := mids[key]; ok {
+			if mid == 0 {
+				continue
+			}
+		} else {
+			m, err := db.MarketByExTokAddr(e.ID, key)
+			if err != nil {
+				// if not in db, we don't care about it
+				mids[key] = 0
+				continue
+			}
+			mids[key] = m.ID
+		}
+
+		o := &Order{
+			MarketID:    mids[key],
+			Volume:      order.Params.AmountBuy,
+			Price:       order.Price,
+			IsBuy:       true,
+			ExpireBlock: strconv.Itoa(order.Params.Expires),
+			UserAddress: order.Params.User,
+			Nonce:       strconv.Itoa(order.Params.Nonce),
+			Hash:        order.OrderHash,
+		}
+
+		os = append(os, o)
 	}
 
-	if err := db.BulkInsertOrders(os); err != nil {
-		return 0, err
+	for _, order := range ob.Asks {
+		vol, err := strconv.ParseFloat(order.Total, 32)
+		if err != nil {
+			return nil, err
+		}
+		if vol < volumeThreshold {
+			// skip order since too small
+			continue
+		}
+
+		// cache this in a map
+		key := order.Params.TokenSell
+		if mid, ok := mids[key]; ok {
+			if mid == 0 {
+				continue
+			}
+		} else {
+			m, err := db.MarketByExTokAddr(e.ID, key)
+			if err != nil {
+				// if not in db, we don't care about it
+				mids[key] = 0
+				continue
+			}
+			mids[key] = m.ID
+		}
+
+		o := &Order{
+			MarketID:    mids[key],
+			Volume:      order.Params.AmountSell,
+			Price:       order.Price,
+			IsBuy:       false,
+			ExpireBlock: strconv.Itoa(order.Params.Expires),
+			UserAddress: order.Params.User,
+			Nonce:       strconv.Itoa(order.Params.Nonce),
+			Hash:        order.OrderHash,
+		}
+
+		os = append(os, o)
 	}
-	return len(os), nil
+
+	return os, nil
 }

@@ -1,14 +1,14 @@
 package orderbook
 
 import (
+	"fmt"
 	"log"
-	"math"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/mathieugilbert/aabot/adapters"
 	goed "github.com/mathieugilbert/go-etherdelta"
+	idex "github.com/mathieugilbert/go-idex"
 )
 
 // Market holds information about tokens per exchange
@@ -54,13 +54,11 @@ func (db *DB) Market(id int) (*Market, error) {
 	return m, err
 }
 
-// MarketByExTok fetches by exchange id and token id
-func (db *DB) MarketByExTok(eid, tid int) (*Market, error) {
-	m := &Market{}
-	if err := db.Where(&Market{ExchangeID: eid, TokenID: tid}).First(m).Error; err != nil {
-		return nil, err
-	}
-	return m, nil
+// MarketByExTokAddr fetches by exchange id and token address
+func (db *DB) MarketByExTokAddr(eid int, tokenAddr string) (m *Market, err error) {
+	m = &Market{}
+	err = db.Joins("left join tokens on tokens.id = markets.token_id").Where("tokens.address = UPPER(?) AND markets.exchange_id = ?", tokenAddr, eid).First(m).Error
+	return
 }
 
 // ExchangeMarketsJoined returns all markets for the exchange, preloading token and exchange
@@ -95,87 +93,73 @@ func (db *DB) SyncMarketBalances(eth *adapters.Ethereum, addr string) error {
 	return nil
 }
 
-// can this be done with the monitoring websocket connection?
+// LoadOrderbookEtherDelta loads orderbook for the market on EtherDelta
 // 2018/08/27 23:11:03 Error getting ED order book for market 18: Error getting orders, got null
 // 2018/08/27 23:11:03 New trades, refreshed orderbook for token KIN on exchange EtherDelta
-
-func (m *Market) LoadOrderbook(db *DB, s *ExchangeServices, wg *sync.WaitGroup) {
-	var volumeThreshold = 0.001 * math.Pow10(18)
-
+func (m *Market) LoadOrderbookEtherDelta(db *DB, wg *sync.WaitGroup) {
 	if m.Token.Name == "ETH" || !m.Active {
 		wg.Done()
 		return
 	}
 
-	opts := &goed.GetOrderBookOpts{
-		TokenAddress: m.Token.Address,
-	}
-
-	orders, err := s.GoEd.GetOrderBook(opts)
+	ed := goed.NewForkDelta(&goed.Options{})
+	ob, err := ed.GetOrderBook(&goed.GetOrderBookOpts{TokenAddress: m.Token.Address})
 	if err != nil {
 		log.Printf("Error getting ED order book for market %v: %v\n", m.ID, err)
 		wg.Done()
 		return
 	}
 
-	var os []*Order
-
-	for _, order := range orders.Buys {
-		vol, err := strconv.ParseFloat(order.AvailableVolumeBase, 32)
-		if err != nil {
-			log.Printf("ParseFloat(%v) error: %v\n", order.AvailableVolumeBase, err)
-			continue
-		}
-		if vol < volumeThreshold {
-			continue
-		}
-
-		o := &Order{
-			MarketID:    m.ID,
-			ExchangeOID: order.Id,
-			Volume:      order.AvailableVolume,
-			Price:       order.Price,
-			IsBuy:       true,
-			ExpireBlock: order.Expires,
-			UserAddress: order.User,
-			Nonce:       order.Nonce,
-			V:           order.V,
-			R:           order.R,
-			S:           order.S,
-		}
-
-		os = append(os, o)
+	os, err := m.Exchange.OrderbookToOrdersEtherDelta(db, ob)
+	if err != nil {
+		log.Printf("Error processing new EtherDelta orders for market %v: %v\n", m.ID, err)
+		wg.Done()
+		return
 	}
 
-	for _, order := range orders.Sells {
-		vol, err := strconv.ParseFloat(order.AvailableVolumeBase, 32)
-		if err != nil {
-			log.Printf("ParseFloat(%v) error: %v\n", order.AvailableVolumeBase, err)
-			continue
-		}
-		if vol < volumeThreshold {
-			continue
-		}
-
-		o := &Order{
-			MarketID:    m.ID,
-			ExchangeOID: order.Id,
-			Volume:      order.AvailableVolume,
-			Price:       order.Price,
-			IsBuy:       false,
-			ExpireBlock: order.Expires,
-			UserAddress: order.User,
-			Nonce:       order.Nonce,
-			V:           order.V,
-			R:           order.R,
-			S:           order.S,
-		}
-
-		os = append(os, o)
+	if len(os) == 0 {
+		wg.Done()
+		return
 	}
 
 	if err := db.BulkInsertOrders(os); err != nil {
 		log.Printf("Error inserting orders for market %v: %v\n", m.ID, err)
+		wg.Done()
+		return
+	}
+
+	wg.Done()
+}
+
+// LoadOrderbookIDEX loads orderbook for the market
+func (m *Market) LoadOrderbookIDEX(db *DB, wg *sync.WaitGroup) {
+	if m.Token.Name == "ETH" || !m.Active {
+		wg.Done()
+		return
+	}
+
+	i := idex.New()
+	ob, err := i.API.OrderBook(fmt.Sprintf("ETH_%v", m.Token.Name))
+	if err != nil {
+		log.Printf("Error getting open orders for market %v: %v\n", m.ID, err)
+		wg.Done()
+		return
+	}
+
+	os, err := m.Exchange.OrderbookToOrdersIdex(db, ob)
+	if err != nil {
+		log.Printf("Error processing new Idex orders for market %v: %v\n", m.ID, err)
+		wg.Done()
+		return
+	}
+
+	if len(os) == 0 {
+		wg.Done()
+		return
+	}
+
+	if err := db.BulkInsertOrders(os); err != nil {
+		log.Printf("Error inserting orders for market %+v: %v\n", m, err)
 		wg.Done()
 		return
 	}

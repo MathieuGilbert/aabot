@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"strings"
 
 	"github.com/jinzhu/gorm"
 	"github.com/mathieugilbert/aabot/adapters"
@@ -21,6 +22,7 @@ type Datastore interface {
 	Exchanges() ([]*Exchange, error)
 	ExchangesJoined() ([]*Exchange, error)
 	ExchangeByName(string) (Exchange, error)
+	ExchangeByMarket(int) (Exchange, error)
 	Tokens() ([]*Token, error)
 	Token(int) (*Token, error)
 	TokenByName(string) (Token, error)
@@ -28,14 +30,16 @@ type Datastore interface {
 	Markets() ([]*Market, error)
 	MarketsJoined() ([]*Market, error)
 	Market(int) (*Market, error)
-	MarketByExTok(int, int) (*Market, error)
+	MarketByExTokAddr(int, string) (*Market, error)
 	Balance(int) (string, error)
 	Wallets() ([]*Wallet, error)
 	SyncBalances(*adapters.Ethereum, string) error
 	SyncMarketBalances(*adapters.Ethereum, string) error
 	BulkInsertOrders([]*Order) error
+	InsertOrder(*Order) error
 	HighestBuys(int, int) ([]*Order, error)
 	LowestSells(int, int) ([]*Order, error)
+	DeleteOrderByHash(string) error
 }
 
 // NewDB creates a new connection
@@ -78,6 +82,8 @@ func (db *DB) Seed(fileName string) error {
 	}
 
 	for _, t := range s.Tokens {
+		t.Address = strings.ToUpper(t.Address)
+
 		tok := &Token{}
 		if err := db.FirstOrCreate(tok, t).Error; err != nil {
 			return err

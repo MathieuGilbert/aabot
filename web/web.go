@@ -15,14 +15,12 @@ import (
 	"github.com/mathieugilbert/aabot/adapters"
 	"github.com/mathieugilbert/aabot/cmd/config"
 	"github.com/mathieugilbert/aabot/orderbook"
-	goed "github.com/mathieugilbert/go-etherdelta"
 )
 
 // ServiceStore wraps needed services
 type ServiceStore struct {
 	Config   *config.Configuration
 	Ethereum *adapters.Ethereum
-	GoEd     *goed.Service
 	Redis    *redis.Client
 	DB       orderbook.Datastore
 }
